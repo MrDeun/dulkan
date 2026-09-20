@@ -1,6 +1,5 @@
 #pragma once
-#include "vulkan/vk_platform.h"
-#include "vulkan/vulkan_core.h"
+#include <volk.h>
 #define VK_NO_PROTOTYPES
 #include "SDL3/SDL_video.h"
 #include <SDL3/SDL_vulkan.h>
@@ -14,7 +13,7 @@ struct SDL_Window;
 struct VmaAllocator_t;
 struct VmaAllocation_t;
 using VmaAllocator = VmaAllocator_t *;
-using VmaAllocation = VmaAllocator_t *;
+using VmaAllocation = VmaAllocation_t *;
 
 struct FrameResources {
   VkCommandPool command_pool = nullptr;

@@ -1,5 +1,4 @@
 #include "application.hpp"
-#include <vulkan/vulkan.hpp>
 #include <SDL3/SDL.h>
 #include <cstdint>
 #include <print>
@@ -11,14 +10,23 @@ bool Application::initialize() {
   if (SDL_InitSubSystem(SDL_INIT_VIDEO)) {
     window = SDL_CreateWindow("Hello Vulkan", width, height,
                               SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
+  } else {
+    showError("Failure of SDL initialization");
+    return false;
   }
+  if (!initializeVulkan()) {
+    showError("Failure of Vulkan initialization");
+    return false;
+  }
+
+  return true;
 }
 
-VKAPI_ATTR VkBool32 VKAPI_CALL
-debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-              VkDebugUtilsMessageTypeFlagsEXT messageType,
-              const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
-              void *pUserData) {
+VKAPI_ATTR VkBool32 VKAPI_CALL Application::debugCallback(
+    VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+    VkDebugUtilsMessageTypeFlagsEXT messageType,
+    const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
+    void *pUserData) {
   if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
     std::println(stderr, "Validation Layer: {}", pCallbackData->pMessage);
   }
@@ -168,35 +176,35 @@ bool Application::createDevice(VkPhysicalDevice physical_device) {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
       .pNext = &supported_features_12};
 
-      std::vector<float> queue_priority{1.0f};
-      VkDeviceQueueCreateInfo gfxQueueInfo{
-        .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-        .queueFamilyIndex = gfxQueueFamIdx,
-        .queueCount = 1,
-        .pQueuePriorities = queue_priority.data()
-      };
-      const std::vector<const char*> device_extensions{VK_KHR_SWAPCHAIN_EXTENSION_NAME};
-      VkDeviceCreateInfo dev_create_info{
-        .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-        .pNext = &features,
-        .queueCreateInfoCount = 1,
-        .pQueueCreateInfos = &gfxQueueInfo,
-        .enabledExtensionCount = static_cast<uint32_t>(device_extensions.size()),
-        .ppEnabledExtensionNames = device_extensions.data(),
-        .pEnabledFeatures = nullptr,
-      };
+  std::vector<float> queue_priority{1.0f};
+  VkDeviceQueueCreateInfo gfxQueueInfo{
+      .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+      .queueFamilyIndex = gfxQueueFamIdx,
+      .queueCount = 1,
+      .pQueuePriorities = queue_priority.data()};
+  const std::vector<const char *> device_extensions{
+      VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+  VkDeviceCreateInfo dev_create_info{
+      .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+      .pNext = &features,
+      .queueCreateInfoCount = 1,
+      .pQueueCreateInfos = &gfxQueueInfo,
+      .enabledExtensionCount = static_cast<uint32_t>(device_extensions.size()),
+      .ppEnabledExtensionNames = device_extensions.data(),
+      .pEnabledFeatures = nullptr,
+  };
 
-      if (vkCreateDevice(physical_device,&dev_create_info,nullptr,&device) != VK_SUCCESS) {
-        return false;
-      }
+  if (vkCreateDevice(physical_device, &dev_create_info, nullptr, &device) !=
+      VK_SUCCESS) {
+    return false;
+  }
 
-      vkGetDeviceQueue(device,gfxQueueFamIdx,0,&gfxQueue);
-      if (!gfxQueue) {
-        showError("Couldn't get graphics queue");
-        return false;
-      }
-      return true;
-
+  vkGetDeviceQueue(device, gfxQueueFamIdx, 0, &gfxQueue);
+  if (!gfxQueue) {
+    showError("Couldn't get graphics queue");
+    return false;
+  }
+  return true;
 }
 bool Application::initializeVulkan() {
   if (!createVulkanInstance()) {
@@ -219,6 +227,8 @@ bool Application::initializeVulkan() {
     showError("Unable to create logical device");
     return false;
   }
+
+  return true;
 }
 
 void Application::close() {
