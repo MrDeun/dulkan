@@ -5,7 +5,6 @@
 #include "SDL3/SDL_video.h"
 #include <SDL3/SDL_vulkan.h>
 #include <shaderc/shaderc.hpp>
-#include <string_view>
 #include <vulkan/vulkan.h>
 
 #include <array>

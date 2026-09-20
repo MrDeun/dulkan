@@ -1,8 +1,6 @@
 #include "application.hpp"
-#include "SDL3/SDL.h"
-#include "SDL3/SDL_video.h"
-#include "SDL3/SDL_vulkan.h"
-#include "vulkan/vulkan_core.h"
+#include <vulkan/vulkan.hpp>
+#include <SDL3/SDL.h>
 #include <cstdint>
 #include <print>
 #include <vector>
