@@ -84,9 +84,6 @@ bool Application::initializeVulkan() {
 }
 
 void Application::close() {
-  if (swapchain) {
-    vkDestroySwapchainKHR(device, swapchain, nullptr);
-  }
   destroySwapchain();
   if (vma_allocator) {
     vmaDestroyAllocator(vma_allocator);
@@ -380,7 +377,7 @@ bool Application::createSwapchain(uint32_t width, uint32_t height) {
         .subresourceRange{
             .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
             .baseMipLevel = 0,
-            .levelCount = 0,
+            .levelCount = 1,
             .baseArrayLayer = 0,
             .layerCount = 1,
         }};
