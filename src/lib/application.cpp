@@ -1,9 +1,10 @@
 #include "application.hpp"
 #include <SDL3/SDL.h>
-#include <cstdint>
-#include <print>
-#include <vector>
+#define VOLK_IMPLEMENTATION
 #include <volk.h>
+#define VMA_IMPLEMENTATION
+#include <vk_mem_alloc.h>
+#include <print>
 
 void Application::run() {}
 bool Application::initialize() {
@@ -35,6 +36,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL Application::debugCallback(
 
 void Application::showError(const std::string &msg) const {
   std::println(stderr, "Application error: {}", msg);
+  SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Error", msg.c_str(), window);
 }
 
 bool Application::createVulkanInstance() {
@@ -50,11 +52,16 @@ bool Application::createVulkanInstance() {
   uint32_t instance_extension_count = 0;
   const auto *const *extensions =
       SDL_Vulkan_GetInstanceExtensions(&instance_extension_count);
+
   std::vector<const char *> requested_extensions{
       VK_EXT_DEBUG_UTILS_EXTENSION_NAME};
   for (int i = 0; i < instance_extension_count; ++i) {
     requested_extensions.push_back(extensions[i]);
   }
+
+  std::for_each(std::begin(requested_extensions),
+                std::end(requested_extensions),
+                [](const auto &str) { std::println("{}", str); });
 
   std::vector<const char *> requested_layers{"VK_LAYER_KHRONOS_validation"};
 
@@ -77,16 +84,24 @@ bool Application::createVulkanInstance() {
           static_cast<uint32_t>(requested_extensions.size()),
       .ppEnabledExtensionNames = requested_extensions.data()};
 
-  if (vkCreateInstance(&instance_create_info, nullptr, &vulkan_instance) !=
-      VK_SUCCESS) {
+  if (VkResult res =
+          vkCreateInstance(&instance_create_info, nullptr, &vulkan_instance);
+      res != VK_SUCCESS) {
+    showError(std::format("Can't create the vulkan instance... Error = {:X}",
+                          static_cast<int32_t>(res)));
     return false;
   }
   volkLoadInstance(vulkan_instance);
   return true;
 }
 bool Application::createSurface() {
-  return SDL_Vulkan_CreateSurface(window, vulkan_instance, nullptr, &surface);
+  if (!SDL_Vulkan_CreateSurface(window, vulkan_instance, nullptr, &surface)) {
+    showError(SDL_GetError());
+    return false;
+  }
+  return true;
 }
+
 VkPhysicalDevice Application::findPhysicalDevice() {
   uint32_t physical_device_count = 0;
   vkEnumeratePhysicalDevices(vulkan_instance, &physical_device_count, nullptr);
@@ -174,7 +189,8 @@ bool Application::createDevice(VkPhysicalDevice physical_device) {
   };
   VkPhysicalDeviceFeatures2 features{
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
-      .pNext = &supported_features_12};
+      .pNext = &supported_features_12,
+  };
 
   std::vector<float> queue_priority{1.0f};
   VkDeviceQueueCreateInfo gfxQueueInfo{
@@ -206,6 +222,22 @@ bool Application::createDevice(VkPhysicalDevice physical_device) {
   }
   return true;
 }
+bool Application::initializeVMA() {
+  VmaVulkanFunctions vmaFuncInfo{};
+  VmaAllocatorCreateInfo vmaAllocInfo{
+      .flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT,
+      .physicalDevice = physical_device,
+      .device = device,
+      .pVulkanFunctions = &vmaFuncInfo,
+      .instance = vulkan_instance,
+      .vulkanApiVersion = VulkanVersion,
+  };
+  vmaImportVulkanFunctionsFromVolk(&vmaAllocInfo, &vmaFuncInfo);
+  if (VK_SUCCESS != vmaCreateAllocator(&vmaAllocInfo, &vma_allocator)) {
+    return false;
+  }
+  return true;
+}
 bool Application::initializeVulkan() {
   if (!createVulkanInstance()) {
     showError("Failure of Vulkan instanation");
@@ -227,12 +259,24 @@ bool Application::initializeVulkan() {
     showError("Unable to create logical device");
     return false;
   }
+  if (!initializeVMA()) {
+    showError("Unable to create Vulkan Memory Allocator");
+    return false;
+  }
 
   return true;
 }
 
 void Application::close() {
-
+  if (vma_allocator) {
+    vmaDestroyAllocator(vma_allocator);
+  }
+  if (surface) {
+    vkDestroySurfaceKHR(vulkan_instance, surface, nullptr);
+  }
+  if (device) {
+    vkDestroyDevice(device, nullptr);
+  }
   if (vulkan_instance) {
     vkDestroyInstance(vulkan_instance, nullptr);
   }

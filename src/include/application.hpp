@@ -1,19 +1,17 @@
 #pragma once
-#include <volk.h>
 #define VK_NO_PROTOTYPES
-#include "SDL3/SDL_video.h"
+#include <vulkan/vulkan.h>
 #include <SDL3/SDL_vulkan.h>
 #include <shaderc/shaderc.hpp>
-#include <vulkan/vulkan.h>
 
 #include <array>
 #include <vector>
 
-struct SDL_Window;
-struct VmaAllocator_t;
-struct VmaAllocation_t;
-using VmaAllocator = VmaAllocator_t *;
-using VmaAllocation = VmaAllocation_t *;
+struct VmaAllocator_T;
+typedef struct VmaAllocator_T* VmaAllocator;
+struct VmaAllocation_T;
+typedef struct VmaAllocation_T* VmaAllocation;
+
 
 struct FrameResources {
   VkCommandPool command_pool = nullptr;
