@@ -64,6 +64,7 @@ private:
   std::array<FrameResources, MaxFramesInFlight> frameResources;
 
   void showError(const std::string &errorMessasge) const;
+  void showError(const std::string &errorMessasge, VkResult error_code) const;
 
   static VKAPI_ATTR VkBool32 VKAPI_CALL
   debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
