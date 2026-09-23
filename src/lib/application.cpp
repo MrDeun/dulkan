@@ -1,8 +1,14 @@
 #include "application.hpp"
+#include "shaderc/env.h"
+#include "shaderc/shaderc.h"
+#include "shaderc/shaderc.hpp"
+#include "shaderc/status.h"
+#include "utils.hpp"
 #include "vulkan/vulkan_core.h"
 #include <SDL3/SDL.h>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #define VOLK_IMPLEMENTATION
 #include <volk.h>
 #define VMA_IMPLEMENTATION
@@ -49,6 +55,28 @@ void Application::showError(const std::string &errorMessasge,
   showError(formatted);
 };
 
+void Application::destroySwapchain() {
+  for (auto smv : swapchainImageViews) {
+    vkDestroyImageView(device, smv, nullptr);
+  }
+  swapchainImageViews.clear();
+  for (auto &smv : renderCompleteSemaphores) {
+    vkDestroySemaphore(device, smv, nullptr);
+  }
+  renderCompleteSemaphores.clear();
+
+  if (swapchain) {
+    vkDestroySwapchainKHR(device, swapchain, nullptr);
+    swapchain = nullptr;
+  }
+
+  if (depthImageView) {
+    vkDestroyImageView(device, depthImageView, nullptr);
+    vmaDestroyImage(vma_allocator, depthImage, depthImageAllocation);
+    depthImageView = nullptr;
+  }
+}
+
 bool Application::initializeVulkan() {
   if (!createVulkanInstance()) {
     showError("Failure of Vulkan instanation");
@@ -77,6 +105,11 @@ bool Application::initializeVulkan() {
 
   if (!createSwapchain(width, height)) {
     showError("Unable to create swapchain");
+    return false;
+  }
+
+  if (!createShaders()) {
+    showError("Error createing shader modules");
     return false;
   }
 
@@ -322,16 +355,16 @@ bool Application::initializeVMA() {
 }
 
 bool Application::createSwapchain(uint32_t width, uint32_t height) {
-  VkResult ok = VK_SUCCESS;
+  VkResult err = VK_SUCCESS;
   swapchainWidth = width;
   swapchainHeight = height;
   VkSurfaceCapabilitiesKHR surfaceCaps{};
-  if (ok = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, surface,
-                                                     &surfaceCaps);
-      ok != VK_SUCCESS) {
+  if (err = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, surface,
+                                                      &surfaceCaps);
+      err != VK_SUCCESS) {
     showError(
         std::format("Couldn't get the surface capabilities - Error code: {}",
-                    static_cast<int32_t>(ok)));
+                    static_cast<int32_t>(err)));
     return false;
   }
 
@@ -354,10 +387,10 @@ bool Application::createSwapchain(uint32_t width, uint32_t height) {
       .presentMode = VK_PRESENT_MODE_FIFO_KHR,
   };
 
-  if (ok = vkCreateSwapchainKHR(device, &swapchainCreateInfo, nullptr,
-                                &swapchain);
-      ok != VK_SUCCESS) {
-    showError("Failure to create Swapchain", ok);
+  if (err = vkCreateSwapchainKHR(device, &swapchainCreateInfo, nullptr,
+                                 &swapchain);
+      err != VK_SUCCESS) {
+    showError("Failure to create Swapchain", err);
     return false;
   }
 
@@ -381,10 +414,10 @@ bool Application::createSwapchain(uint32_t width, uint32_t height) {
             .baseArrayLayer = 0,
             .layerCount = 1,
         }};
-    if (ok = vkCreateImageView(device, &imgViewInfo, nullptr,
-                               &swapchainImageViews[i]);
-        ok != VK_SUCCESS) {
-      showError("Error creating swapchain image view", ok);
+    if (err = vkCreateImageView(device, &imgViewInfo, nullptr,
+                                &swapchainImageViews[i]);
+        err != VK_SUCCESS) {
+      showError("Error creating swapchain image view", err);
       return false;
     }
   }
@@ -393,9 +426,9 @@ bool Application::createSwapchain(uint32_t width, uint32_t height) {
     VkSemaphoreCreateInfo semaphoreInfo{
         .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
     };
-    if (ok = vkCreateSemaphore(device, &semaphoreInfo, nullptr, &semaphore);
-        ok != VK_SUCCESS) {
-      showError("Error creating the render-complete semaphore", ok);
+    if (err = vkCreateSemaphore(device, &semaphoreInfo, nullptr, &semaphore);
+        err != VK_SUCCESS) {
+      showError("Error creating the render-complete semaphore", err);
       return false;
     }
   }
@@ -422,10 +455,10 @@ bool Application::createSwapchain(uint32_t width, uint32_t height) {
       .usage = VMA_MEMORY_USAGE_AUTO,
   };
 
-  if (ok = vmaCreateImage(vma_allocator, &depth_create_info, &allocInfo,
-                          &depthImage, &depthImageAllocation, nullptr);
-      ok != VK_SUCCESS) {
-    showError("Error allocating depth image", ok);
+  if (err = vmaCreateImage(vma_allocator, &depth_create_info, &allocInfo,
+                           &depthImage, &depthImageAllocation, nullptr);
+      err != VK_SUCCESS) {
+    showError("Error allocating depth image", err);
     return false;
   }
 
@@ -441,34 +474,68 @@ bool Application::createSwapchain(uint32_t width, uint32_t height) {
       },
   };
 
-  if (ok = vkCreateImageView(device, &depthImgViewInfo, nullptr,
-                             &depthImageView);
-      ok != VK_SUCCESS) {
-    showError("Error creating depth image view", ok);
+  if (err = vkCreateImageView(device, &depthImgViewInfo, nullptr,
+                              &depthImageView);
+      err != VK_SUCCESS) {
+    showError("Error creating depth image view", err);
     return false;
   }
 
   return true;
 }
 
-void Application::destroySwapchain() {
-  for (auto smv : swapchainImageViews) {
-    vkDestroyImageView(device, smv, nullptr);
+VkShaderModule Application::createShaderModule(const std::string &file_name,
+                                               shaderc_shader_kind kind) const {
+  const std::string shader_path = "src/shaders/" + file_name;
+  const std::string shader_source = read_text_file(shader_path);
+  if (shader_source.empty()) {
+    showError(std::format("Requested shader code is not existent - {}",
+                          std::filesystem::absolute(shader_path).string()));
+    return nullptr;
   }
-  swapchainImageViews.clear();
-  for (auto &smv : renderCompleteSemaphores) {
-    vkDestroySemaphore(device, smv, nullptr);
-  }
-  renderCompleteSemaphores.clear();
+  std::println("Compiling shader: ", shader_path);
+  shaderc::Compiler compiler{};
+  shaderc::CompileOptions opts{};
 
-  if (swapchain) {
-    vkDestroySwapchainKHR(device, swapchain, nullptr);
-    swapchain = nullptr;
+  opts.SetTargetEnvironment(shaderc_target_env_vulkan,
+                            shaderc_env_version_vulkan_1_3);
+  opts.SetTargetSpirv(shaderc_spirv_version_1_6);
+  opts.SetOptimizationLevel(shaderc_optimization_level_performance);
+  shaderc::CompilationResult result =
+      compiler.CompileGlslToSpv(shader_source, kind, file_name.c_str(), opts);
+  if (result.GetCompilationStatus() != shaderc_compilation_status_success) {
+    std::println(stderr, "Shader compilation error: {}",
+                 result.GetErrorMessage());
+    return nullptr;
   }
 
-  if (depthImageView) {
-    vkDestroyImageView(device, depthImageView, nullptr);
-    vmaDestroyImage(vma_allocator, depthImage, depthImageAllocation);
-    depthImageView = nullptr;
+  const size_t shader_size =
+      (result.cend() - result.cbegin()) * sizeof(uint32_t);
+  VkShaderModuleCreateInfo module_create_info{
+      .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+      .codeSize = shader_size,
+      .pCode = result.cbegin(),
+  };
+
+  VkShaderModule shaderModule = nullptr;
+  auto err = VK_SUCCESS;
+  if (err = vkCreateShaderModule(device, &module_create_info, nullptr,
+                                 &shaderModule);
+      err != VK_SUCCESS) {
+    showError("Error creating shader module", err);
+    return nullptr;
   }
-}
+  return shaderModule;
+};
+
+bool Application::createShaders() {
+  if (vertShader = createShaderModule("shader.vert", shaderc_vertex_shader);
+      !vertShader) {
+    return false;
+  }
+  if (fragShader = createShaderModule("shader.frag", shaderc_fragment_shader);
+      !fragShader) {
+    return false;
+  }
+  return true;
+};
