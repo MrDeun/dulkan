@@ -13,3 +13,7 @@ add_files("src/lib/*.cpp")
 add_files("src/main.cpp")
 add_packages("vulkan-headers", "glm", "libsdl3", "shaderc","volk","vulkan-memory-allocator")
 set_languages("c++23")
+    after_build(function (target)
+        os.cp("src/shaders", target:targetdir())
+    end)
+

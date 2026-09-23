@@ -46,7 +46,8 @@ VKAPI_ATTR VkBool32 VKAPI_CALL Application::debugCallback(
 
 void Application::showError(const std::string &msg) const {
   std::println(stderr, "Application error: {}", msg);
-  SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Error", msg.c_str(), window);
+  // SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Error", msg.c_str(),
+  // window);
 }
 void Application::showError(const std::string &errorMessasge,
                             VkResult error_code) const {
@@ -117,6 +118,12 @@ bool Application::initializeVulkan() {
 }
 
 void Application::close() {
+  if (fragShader) {
+    vkDestroyShaderModule(device, fragShader, nullptr);
+  }
+  if (vertShader) {
+    vkDestroyShaderModule(device, vertShader, nullptr);
+  }
   destroySwapchain();
   if (vma_allocator) {
     vmaDestroyAllocator(vma_allocator);
@@ -486,7 +493,7 @@ bool Application::createSwapchain(uint32_t width, uint32_t height) {
 
 VkShaderModule Application::createShaderModule(const std::string &file_name,
                                                shaderc_shader_kind kind) const {
-  const std::string shader_path = "src/shaders/" + file_name;
+  const std::string shader_path = "shaders/" + file_name;
   const std::string shader_source = read_text_file(shader_path);
   if (shader_source.empty()) {
     showError(std::format("Requested shader code is not existent - {}",
