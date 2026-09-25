@@ -12,5 +12,5 @@ std::string read_text_file(const std::string &shader_path) {
     infile.close();
     return std::move(output);
   }
-  return {};
+  return "";
 }
